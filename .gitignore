@@ -1,0 +1,5 @@
+# Downloaded GTFS feed (about 85 MB zipped, 650 MB unpacked); fetch it fresh, see README
+gtfs/
+*.zip
+__pycache__/
+.DS_Store

@@ -1,0 +1,632 @@
+<title>Berlin U-Bahn Planner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Archivo+Narrow:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: full-height app. Route panel on the left (desktop) or below the map (phone); the map fills the rest. */
+:root {
+  --bg: #f3f4f0;          /* map paper: light grey with a faint green cast */
+  --surface: #ffffff;
+  --fg: #16191d;
+  --muted: #5d6670;
+  --rule: #d8dcd6;
+  --accent: #1d5fd1;      /* start marker */
+  --dest: #d1361d;        /* destination marker */
+  --station-fill: #ffffff;
+  --halo: #f3f4f0;
+  --water: #c3d8e8;
+  --water-line: #9fc0da;
+  --park: #dde7d3;
+  --forest: #d3e0c8;
+  --boundary: #c9cec4;
+  --geo-label: #7d8a96;
+  --font-ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-label: "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --panel-w: 360px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121519; --surface: #1b1f24; --fg: #e9edf1; --muted: #9aa4ae; --rule: #2e353c;
+    --accent: #6ea1ff; --dest: #ff7a5c; --station-fill: #121519; --halo: #121519;
+    --water: #182a3a; --water-line: #24405a; --park: #18241b; --forest: #1a2a1d; --boundary: #2c3339; --geo-label: #6c7884;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121519; --surface: #1b1f24; --fg: #e9edf1; --muted: #9aa4ae; --rule: #2e353c;
+  --accent: #6ea1ff; --dest: #ff7a5c; --station-fill: #121519; --halo: #121519;
+  --water: #182a3a; --water-line: #24405a; --park: #18241b; --forest: #1a2a1d; --boundary: #2c3339; --geo-label: #6c7884;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); overflow: hidden; }
+.app { height: 100%; display: grid; grid-template-columns: var(--panel-w) 1fr; }
+.panel {
+  background: var(--surface); border-right: 1px solid var(--rule);
+  display: flex; flex-direction: column; gap: 16px; overflow-y: auto; min-width: 0;
+  padding-block: 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px;
+}
+h1 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
+.ubadge { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; border-radius: 4px; background: #115d91; color: #fff; font-size: 0.8em; font-weight: 700; }
+.hint { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
+.fields { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.field { display: flex; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 6px; padding: 0 10px; background: var(--bg); }
+.field:focus-within { border-color: var(--accent); }
+.field .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.field input { border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 0.95rem; padding: 10px 0; width: 100%; min-width: 0; outline: none; }
+.stack { display: grid; gap: 8px; }
+button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--rule); border-radius: 6px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.swap { width: 38px; height: 38px; font-size: 1.1rem; }
+.clear { padding: 6px 12px; font-size: 0.85rem; justify-self: start; align-self: flex-start; }
+.summary { display: flex; gap: 20px; align-items: baseline; border-top: 1px solid var(--rule); padding-top: 14px; }
+.summary .big { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.summary .small { color: var(--muted); font-size: 0.9rem; }
+.legs { list-style: none; margin: 0; padding: 0; display: grid; }
+.leg { display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding: 10px 0; }
+.leg .rail { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.lb { display: inline-grid; place-items: center; min-width: 34px; height: 22px; padding: 0 4px; border-radius: 3px; font-weight: 700; font-size: 0.85rem; }
+.leg .bar { width: 4px; flex: 1; border-radius: 2px; min-height: 18px; }
+.leg .body { min-width: 0; display: grid; gap: 3px; font-size: 0.92rem; }
+.leg .st { font-weight: 600; }
+.leg .meta { color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.transfer { color: var(--muted); font-size: 0.85rem; padding: 6px 0 6px 54px; border-top: 1px dashed var(--rule); border-bottom: 1px dashed var(--rule); }
+.note { color: var(--muted); font-size: 0.8rem; line-height: 1.45; margin: 0; }
+.empty { color: var(--muted); font-size: 0.92rem; line-height: 1.5; margin: 0; }
+.mapwrap { position: relative; min-width: 0; min-height: 0; }
+svg#map { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+svg#map.panning { cursor: grabbing; }
+.zoom { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 12px; display: grid; gap: 6px; }
+.zoom button { width: 38px; height: 38px; background: var(--surface); font-size: 1.15rem; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.legend { position: absolute; left: 12px; bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 24px); }
+.attrib { background: var(--bg); padding: 2px 6px; border-radius: 3px; position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); bottom: max(10px, env(safe-area-inset-bottom, 0px)); font-size: 0.7rem; color: var(--muted); }
+
+/* map */
+.bg-water { fill: var(--water); stroke: none; }
+.bg-river { fill: none; stroke: var(--water-line); stroke-linecap: round; stroke-linejoin: round; }
+.bg-park { fill: var(--park); stroke: none; }
+.bg-forest { fill: var(--forest); stroke: none; }
+.bg-boundary { fill: none; stroke: var(--boundary); stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; stroke-width: 1.5; }
+.geo-lbl { font-family: var(--font-label); font-style: italic; fill: var(--geo-label); text-anchor: middle; pointer-events: none; }
+.seg { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; stroke-width: 4; }
+.route .seg { stroke-width: 7; }
+.base-lines, .station, .lbl { transition: opacity .2s; }
+svg.has-route .base-lines { opacity: .2; }
+svg.has-route .station:not(.on-route), svg.has-route .lbl:not(.on-route) { opacity: .3; }
+.st-dot { fill: var(--station-fill); vector-effect: non-scaling-stroke; stroke-width: 2; }
+.st-x { fill: var(--station-fill); stroke: var(--fg); vector-effect: non-scaling-stroke; stroke-width: 2.2; }
+.st-hit { fill: transparent; cursor: pointer; }
+.labels { font-family: var(--font-label); }
+.lbl { font-weight: 500; fill: var(--fg); paint-order: stroke; stroke: var(--halo); stroke-linejoin: round; cursor: pointer; }
+.lbl.x { font-weight: 600; }
+.lbl.on-route { font-weight: 600; }
+.lbl.hover { fill: var(--accent); }
+.station:hover .st-dot, .station:hover .st-x { stroke-width: 3; }
+.marker circle { stroke: var(--station-fill); vector-effect: non-scaling-stroke; stroke-width: 2.5; }
+.marker text { font-family: var(--font-ui); font-weight: 700; fill: #fff; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .mapwrap { order: 1; }
+  .panel { order: 2; border-right: 0; border-top: 1px solid var(--rule); max-height: 46vh; padding-block: 14px; gap: 12px;
+    padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .hint { display: none; }
+  h1 { font-size: 1.1rem; }
+  .legend { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .base-lines, .station, .lbl { transition: none; } }
+</style>
+
+<div class="app">
+  <aside class="panel" aria-label="Route planner">
+    <div>
+      <h1><span class="ubadge" aria-hidden="true">U</span>Berlin U-Bahn</h1>
+      <p class="hint">Click a station to set your start, then click your destination. Drag to move the map, scroll or pinch to zoom.</p>
+    </div>
+    <div class="fields">
+      <div class="stack">
+        <label class="field" for="from"><span class="dot" style="background:var(--accent)"></span><input id="from" list="station-list" placeholder="From" autocomplete="off" aria-label="From station"></label>
+        <label class="field" for="to"><span class="dot" style="background:var(--dest)"></span><input id="to" list="station-list" placeholder="To" autocomplete="off" aria-label="To station"></label>
+      </div>
+      <button class="swap" id="swap" title="Swap start and destination" aria-label="Swap start and destination">⇅</button>
+    </div>
+    <datalist id="station-list"></datalist>
+    <div id="result"></div>
+  </aside>
+  <div class="mapwrap">
+    <svg id="map" role="img" aria-label="Map of the Berlin U-Bahn drawn on real geography"></svg>
+    <div class="zoom">
+      <button id="zin" aria-label="Zoom in">+</button>
+      <button id="zout" aria-label="Zoom out">−</button>
+      <button id="zfit" aria-label="Show whole map" title="Show whole map">⤢</button>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="attrib">Data: VBB timetable · © OpenStreetMap contributors</div>
+  </div>
+</div>
+
+<script>
+/* Data is inlined by scripts/build_page.py from data/ubahn.json and data/background.json. */
+const NETWORK = /*__UBAHN__*/null;
+const BACKGROUND = /*__BACKGROUND__*/null;
+
+/* ---------- settings ---------- */
+const TRANSFER_WALK_MIN = 3;       // walking between platforms when changing lines (flat estimate)
+const CENTER = [52.5145, 13.395];  // map centre (Mitte); the radial stretch is measured from here
+const STRETCH_R = 3500;            // metres: inside this radius the map is enlarged, outside reduced
+const STRETCH_P = 0.72;            // 1 = true geography; lower = more room in the centre
+const LABEL_PX = 12;               // station label size on screen
+const LINE_GAP_PX = 4.5;           // spacing between lines that share track
+
+/* ---------- projection: metres from CENTER, then radial stretch ---------- */
+const KX = 111320 * Math.cos(CENTER[0] * Math.PI / 180), KY = 110540;
+function project(lat, lon) {
+  const x = (lon - CENTER[1]) * KX, y = -(lat - CENTER[0]) * KY;
+  const r = Math.hypot(x, y);
+  if (r < 1e-6) return [0, 0];
+  const f = STRETCH_R * Math.pow(r / STRETCH_R, STRETCH_P) / r;
+  return [x * f, y * f];
+}
+
+/* ---------- build graph ---------- */
+const stations = new Map();
+for (const s of NETWORK.stations) {
+  const [x, y] = project(s.lat, s.lon);
+  stations.set(s.name, { name: s.name, x, y, lines: s.lines });
+}
+const lines = NETWORK.lines.map(l => ({
+  id: l.id, color: l.color, text: l.text, headway: l.headway, names: l.stations,
+  segs: l.segments.map((sg, i) => ({ a: l.stations[i], b: l.stations[i + 1], min: sg.min,
+    pts: sg.shape.map(([la, lo]) => project(la, lo)) })),
+}));
+const lineById = Object.fromEntries(lines.map(l => [l.id, l]));
+const segKey = (a, b) => a < b ? a + "\u0000" + b : b + "\u0000" + a;
+const segLines = new Map();
+lines.forEach(l => l.segs.forEach(s => {
+  const k = segKey(s.a, s.b);
+  if (!segLines.has(k)) segLines.set(k, []);
+  segLines.get(k).push(l.id);
+}));
+const transferMin = toLine => TRANSFER_WALK_MIN + lineById[toLine].headway / 2;
+
+/* Routing graph: nodes are station|line; changing line costs walk + average wait. */
+const adj = new Map();
+const nk = (s, l) => s + "|" + l;
+function addEdge(u, v, w) { if (!adj.has(u)) adj.set(u, []); adj.get(u).push({ v, w }); }
+lines.forEach(l => l.segs.forEach(s => {
+  addEdge(nk(s.a, l.id), nk(s.b, l.id), s.min);
+  addEdge(nk(s.b, l.id), nk(s.a, l.id), s.min);
+}));
+stations.forEach(st => {
+  for (const a of st.lines) for (const b of st.lines) if (a !== b) addEdge(nk(st.name, a), nk(st.name, b), transferMin(b) + 0.01);
+});
+
+function findRoute(from, to) {
+  if (from === to) return null;
+  const dist = new Map(), prev = new Map(), done = new Set(), queue = [];
+  for (const l of stations.get(from).lines) { const k = nk(from, l); dist.set(k, 0); queue.push(k); }
+  const targets = new Set(stations.get(to).lines.map(l => nk(to, l)));
+  let end = null;
+  while (queue.length) {
+    let bi = 0;
+    for (let i = 1; i < queue.length; i++) if (dist.get(queue[i]) < dist.get(queue[bi])) bi = i;
+    const u = queue.splice(bi, 1)[0];
+    if (done.has(u)) continue;
+    done.add(u);
+    if (targets.has(u)) { end = u; break; }
+    for (const { v, w } of adj.get(u) || []) {
+      const d = dist.get(u) + w;
+      if (!dist.has(v) || d < dist.get(v)) { dist.set(v, d); prev.set(v, u); queue.push(v); }
+    }
+  }
+  if (!end) return null;
+  const path = [];
+  for (let k = end; k; k = prev.get(k)) path.unshift(k.split("|"));
+  const legs = [];
+  for (const [s, l] of path) {
+    const last = legs[legs.length - 1];
+    if (last && last.line === l) last.stops.push(s); else legs.push({ line: l, stops: [s] });
+  }
+  const ride = legs.filter(g => g.stops.length > 1);
+  ride.forEach((g, i) => {
+    const line = lineById[g.line];
+    g.minutes = 0;
+    for (let k = 1; k < g.stops.length; k++)
+      g.minutes += line.segs.find(s => segKey(s.a, s.b) === segKey(g.stops[k - 1], g.stops[k])).min;
+    g.alts = lines.filter(o => o.id !== g.line && g.stops.every((s, k) => k === 0 ||
+      (segLines.get(segKey(g.stops[k - 1], s)) || []).includes(o.id))).map(o => o.id);
+    g.change = i > 0 ? transferMin(g.line) : 0;
+  });
+  const total = ride.reduce((a, g) => a + g.minutes + g.change, 0);
+  return { legs: ride, total, transfers: ride.length - 1, stops: ride.reduce((a, g) => a + g.stops.length - 1, 0) };
+}
+function towards(lineId, a, b) {
+  const n = lineById[lineId].names;
+  return n.indexOf(b) > n.indexOf(a) ? n[n.length - 1] : n[0];
+}
+
+/* ---------- SVG helpers ---------- */
+const SVGNS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("map");
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const pathD = pts => "M" + pts.map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join("L");
+const ringD = ring => pathD(ring.map(([lo, la]) => project(la, lo))) + "Z";
+
+/* ---------- layers ---------- */
+const viewport = el("g", {}, svg);
+const bgLayer = el("g", { class: "background" }, viewport);
+const baseLines = el("g", { class: "base-lines" }, viewport);
+const routeLayer = el("g", { class: "route" }, viewport);
+const stationLayer = el("g", { class: "stations" }, viewport);
+const labelLayer = el("g", { class: "labels" }, viewport);
+const markerLayer = el("g", {}, viewport);
+
+/* background: forests, parks, lakes, rivers, city boundary */
+const riverEls = [], geoLabels = [];
+const ORDER = { forest: 0, park: 1, lake: 2, river: 3, boundary: 4 };
+[...BACKGROUND.features].sort((a, b) => ORDER[a.kind] - ORDER[b.kind]).forEach(f => {
+  const g = f.geometry;
+  if (g.type === "Polygon" || g.type === "MultiPolygon") {
+    const polys = g.type === "Polygon" ? [g.coordinates] : g.coordinates;
+    const d = polys.map(p => p.map(ringD).join("")).join("");
+    const cls = f.kind === "lake" ? "bg-water" : f.kind === "forest" ? "bg-forest" : f.kind === "boundary" ? "bg-boundary" : "bg-park";
+    el("path", { class: cls, d, "fill-rule": "evenodd" }, bgLayer);
+    if (["Großer Tiergarten", "Tempelhofer Feld", "Grunewald", "Tegeler See", "Großer Wannsee", "Treptower Park", "Volkspark Jungfernheide"].includes(f.name)) {
+      // Label at the centre of the largest ring's bounding box.
+      const ring = polys.map(p => p[0]).sort((a, b) => b.length - a.length)[0].map(([lo, la]) => project(la, lo));
+      const xs = ring.map(p => p[0]), ys = ring.map(p => p[1]);
+      geoLabels.push({ text: f.name.replace("Großer ", ""), x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 });
+    }
+  } else if (g.type === "MultiLineString" || g.type === "LineString") {
+    const parts = g.type === "LineString" ? [g.coordinates] : g.coordinates;
+    const d = parts.map(p => pathD(p.map(([lo, la]) => project(la, lo)))).join("");
+    riverEls.push({ el: el("path", { class: "bg-river", d }, bgLayer), main: f.name === "Spree" || f.name === "Havel" });
+  }
+});
+const geoLabelEls = geoLabels.map(g => { const t = el("text", { class: "geo-lbl", x: g.x, y: g.y }, bgLayer); t.textContent = g.text; g.el = t; return t; });
+
+/* lines: one path per segment; shared segments are offset sideways at each zoom level */
+const segEls = [];
+for (const l of lines) for (const s of l.segs) {
+  const p = el("path", { class: "seg", d: pathD(s.pts), stroke: l.color }, baseLines);
+  const ids = segLines.get(segKey(s.a, s.b));
+  if (ids.length > 1) segEls.push({ el: p, s, line: l.id, ids: [...ids].sort() });
+}
+function offsetPolyline(pts, off) {
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+    return [p[0] - dy / L * off, p[1] + dx / L * off];
+  });
+}
+function updateSharedSegments(s) {
+  for (const e of segEls) {
+    const idx = e.ids.indexOf(e.line), off = (idx - (e.ids.length - 1) / 2) * LINE_GAP_PX * s;
+    // Use one direction for every line on the segment so offsets do not cancel out.
+    const pts = e.s.a < e.s.b ? e.s.pts : [...e.s.pts].reverse();
+    e.el.setAttribute("d", pathD(offsetPolyline(pts, off)));
+  }
+}
+
+/* stations */
+for (const st of stations.values()) {
+  st.ix = st.lines.length > 1;
+  const g = el("g", { class: "station", "data-name": st.name, tabindex: 0, role: "button",
+    "aria-label": st.name + " (" + st.lines.join(", ") + ")" }, stationLayer);
+  st.dot = st.ix ? el("circle", { class: "st-x", cx: st.x, cy: st.y }, g)
+                 : el("circle", { class: "st-dot", cx: st.x, cy: st.y, stroke: lineById[st.lines[0]].color }, g);
+  st.hit = el("circle", { class: "st-hit", cx: st.x, cy: st.y }, g);
+  el("title", {}, g).textContent = st.name + " · " + st.lines.join(" ");
+  st.g = g;
+  st.label = el("text", { class: "lbl" + (st.ix ? " x" : ""), "data-name": st.name }, labelLayer);
+  st.label.textContent = st.name;
+  const terminus = st.lines.some(id => { const n = lineById[id].names; return n[0] === st.name || n[n.length - 1] === st.name; });
+  st.priority = (st.ix ? 2 : 0) + (terminus ? 1 : 0);
+}
+
+/* ---------- automatic label placement ---------- */
+const measureCtx = document.createElement("canvas").getContext("2d");
+function measureLabels() {
+  for (const st of stations.values()) {
+    measureCtx.font = `${st.ix ? 600 : 500} ${LABEL_PX}px "Archivo Narrow", "Arial Narrow", sans-serif`;
+    st.wpx = measureCtx.measureText(st.name).width;
+  }
+}
+const SIDES = ["r", "l", "ru", "rd", "b", "t"];   // rotated labels always read away from their station
+function labelGeom(st, pos, s) {
+  const fs = LABEL_PX * s, g = 3 * s, R = st.rr, d = R * 0.75 + g;
+  let x, y, rot = 0, anchor = "start";
+  switch (pos) {
+    case "r": x = st.x + R + g; y = st.y + 0.35 * fs; break;
+    case "l": x = st.x - R - g; y = st.y + 0.35 * fs; anchor = "end"; break;
+    case "t": x = st.x; y = st.y - R - g; anchor = "middle"; break;
+    case "b": x = st.x; y = st.y + R + g + 0.75 * fs; anchor = "middle"; break;
+    case "ru": x = st.x + d; y = st.y - d + 0.3 * fs; rot = -40; break;
+    case "rd": x = st.x + d - 0.3 * fs; y = st.y + d; rot = 40; break;
+  }
+  const w = st.wpx * s, t = rot * Math.PI / 180;
+  const ux = Math.cos(t), uy = Math.sin(t), vx = Math.sin(t), vy = -Math.cos(t);
+  const startOff = anchor === "start" ? 0 : anchor === "end" ? -w : -w / 2, pad = 1.5 * s;
+  const a0 = startOff - pad, a1 = startOff + w + pad, b0 = -0.28 * fs - pad, b1 = 0.78 * fs + pad;
+  const quad = [[a0, b0], [a1, b0], [a1, b1], [a0, b1]].map(([a, b]) => [x + ux * a + vx * b, y + uy * a + vy * b]);
+  return { x, y, rot, anchor, quad, box: bboxOf(quad) };
+}
+function overlap(p, q) {
+  for (const poly of [p, q]) for (let i = 0; i < poly.length; i++) {
+    const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length];
+    const nx = y1 - y2, ny = x2 - x1;
+    let pmin = Infinity, pmax = -Infinity, qmin = Infinity, qmax = -Infinity;
+    for (const [x, y] of p) { const d = x * nx + y * ny; if (d < pmin) pmin = d; if (d > pmax) pmax = d; }
+    for (const [x, y] of q) { const d = x * nx + y * ny; if (d < qmin) qmin = d; if (d > qmax) qmax = d; }
+    if (pmax < qmin || qmax < pmin) return false;
+  }
+  return true;
+}
+function bboxOf(q) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of q) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+  return [x0, y0, x1, y1];
+}
+const boxesMeet = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+
+/* A coarse grid so each label only checks nearby obstacles. */
+class Grid {
+  constructor(cell) { this.cell = cell; this.m = new Map(); }
+  keys(b) {
+    const c = this.cell, out = [];
+    for (let i = Math.floor(b[0] / c); i <= Math.floor(b[2] / c); i++)
+      for (let j = Math.floor(b[1] / c); j <= Math.floor(b[3] / c); j++) out.push(i + "," + j);
+    return out;
+  }
+  add(o) { for (const k of this.keys(o.box)) { if (!this.m.has(k)) this.m.set(k, []); this.m.get(k).push(o); } }
+  hits(G, owner) {
+    for (const k of this.keys(G.box)) for (const o of this.m.get(k) || [])
+      if (o.owner !== owner && boxesMeet(o.box, G.box) && overlap(o.q, G.quad)) return true;
+    return false;
+  }
+}
+
+function relayout() {
+  const rect = svg.getBoundingClientRect(), s = vb.w / (rect.width || 1);
+  // Sizes that stay constant on screen.
+  labelLayer.setAttribute("font-size", (LABEL_PX * s).toFixed(2));
+  labelLayer.style.strokeWidth = (3 * s).toFixed(2);
+  for (const r of riverEls) r.el.style.strokeWidth = Math.max((r.main ? 3 : 2) * s, r.main ? 28 : 14).toFixed(1);
+  geoLabelEls.forEach(t => t.setAttribute("font-size", (11 * s).toFixed(2)));
+  updateSharedSegments(s);
+  const routeSet = state.route ? new Set(state.route.legs.flatMap(g => g.stops)) : new Set();
+  const cell = 120 * s;
+  const fixed = new Grid(cell), tracks = new Grid(cell);
+  for (const st of stations.values()) {
+    const big = st.name === state.from || st.name === state.to;
+    st.r = (st.ix ? 4.6 : 3.4) * s;
+    st.rr = big ? 9.5 * s : st.r;
+    st.dot.setAttribute("r", st.r.toFixed(2));
+    st.hit.setAttribute("r", (11 * s).toFixed(2));
+    const R = st.rr + 1.5 * s;
+    const q = [[st.x - R, st.y - R], [st.x + R, st.y - R], [st.x + R, st.y + R], [st.x - R, st.y + R]];
+    fixed.add({ q, box: bboxOf(q), owner: st.name });
+  }
+  const hw = (LINE_GAP_PX + 2.5) * s;
+  for (const l of lines) for (const sg of l.segs) for (let i = 1; i < sg.pts.length; i++) {
+    const [x1, y1] = sg.pts[i - 1], [x2, y2] = sg.pts[i];
+    const L = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / L * hw, ny = (x2 - x1) / L * hw;
+    const q = [[x1 + nx, y1 + ny], [x2 + nx, y2 + ny], [x2 - nx, y2 - ny], [x1 - nx, y1 - ny]];
+    tracks.add({ q, box: bboxOf(q), owner: null });
+  }
+  const rank = st => (routeSet.has(st.name) ? 10 : 0) + st.priority;
+  const order = [...stations.values()].sort((a, b) => rank(b) - rank(a));
+  for (const st of order) {
+    let chosen = null;
+    for (const strict of [true, false]) {
+      for (const pos of SIDES) {
+        const G = labelGeom(st, pos, s);
+        if (fixed.hits(G, st.name)) continue;
+        if (strict && tracks.hits(G, st.name)) continue;
+        chosen = G; break;
+      }
+      if (chosen) break;
+    }
+    // Start and destination always get a label; other names hide when there is no room.
+    if (!chosen && (st.name === state.from || st.name === state.to)) chosen = labelGeom(st, "r", s);
+    const t = st.label;
+    if (chosen) {
+      fixed.add({ q: chosen.quad, box: chosen.box, owner: st.name });
+      t.setAttribute("x", chosen.x.toFixed(1)); t.setAttribute("y", chosen.y.toFixed(1));
+      t.setAttribute("text-anchor", chosen.anchor);
+      if (chosen.rot) t.setAttribute("transform", `rotate(${chosen.rot} ${chosen.x.toFixed(1)} ${chosen.y.toFixed(1)})`);
+      else t.removeAttribute("transform");
+      t.style.display = "";
+    } else t.style.display = "none";
+  }
+  // Park and lake names: shown only where they do not touch a station or its label.
+  for (const g of geoLabels) {
+    measureCtx.font = `italic 400 11px "Archivo Narrow", "Arial Narrow", sans-serif`;
+    const w = measureCtx.measureText(g.text).width * s, h = 11 * s;
+    const q = [[g.x - w / 2, g.y - h], [g.x + w / 2, g.y - h], [g.x + w / 2, g.y + h * 0.3], [g.x - w / 2, g.y + h * 0.3]];
+    const G = { quad: q, box: bboxOf(q) };
+    g.el.style.display = fixed.hits(G, null) ? "none" : "";
+  }
+  drawMarkers(s);
+}
+let frame = 0;
+function scheduleLayout() { if (!frame) frame = requestAnimationFrame(() => { frame = 0; relayout(); }); }
+
+/* ---------- pan & zoom ---------- */
+const bounds = (() => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  stations.forEach(s => { x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y); });
+  const mx = (x1 - x0) * 0.06, my = (y1 - y0) * 0.05;
+  return { x: x0 - mx, y: y0 - my, w: x1 - x0 + 2 * mx, h: y1 - y0 + 2 * my };
+})();
+let vb = { ...bounds }, laidOut = 0;
+function applyVB() {
+  svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  const s = vb.w / (svg.getBoundingClientRect().width || 1);
+  if (Math.abs(s - laidOut) > 1e-9) { laidOut = s; scheduleLayout(); }
+}
+function fitTo(b) {
+  const r = svg.getBoundingClientRect(), aspect = (r.width || 1) / (r.height || 1);
+  let w = b.w, h = b.h;
+  if (w / h > aspect) h = w / aspect; else w = h * aspect;
+  vb = { x: b.x + (b.w - w) / 2, y: b.y + (b.h - h) / 2, w, h }; applyVB();
+}
+function zoomAt(f, cx, cy) {
+  const nw = Math.min(Math.max(vb.w * f, 1200), bounds.w * 2.5), k = nw / vb.w;
+  vb = { x: cx - (cx - vb.x) * k, y: cy - (cy - vb.y) * k, w: vb.w * k, h: vb.h * k }; applyVB();
+}
+function toMap(cx, cy) {
+  const r = svg.getBoundingClientRect();
+  return [vb.x + (cx - r.left) / r.width * vb.w, vb.y + (cy - r.top) / r.height * vb.h];
+}
+svg.addEventListener("wheel", e => {
+  e.preventDefault();
+  const [x, y] = toMap(e.clientX, e.clientY);
+  zoomAt(Math.exp(e.deltaY * (e.deltaMode ? 0.05 : 0.0015)), x, y);
+}, { passive: false });
+const pointers = new Map();
+let dragMoved = false, pinch = null;
+svg.addEventListener("pointerdown", e => {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY });
+  if (pointers.size === 1) dragMoved = false;
+  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), w: vb.w }; }
+});
+svg.addEventListener("pointermove", e => {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  const r = svg.getBoundingClientRect();
+  if (pointers.size === 1) {
+    if (!dragMoved && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > 6) { dragMoved = true; svg.classList.add("panning"); svg.setPointerCapture(e.pointerId); }
+    if (dragMoved) { vb.x -= (e.clientX - p.x) / r.width * vb.w; vb.y -= (e.clientY - p.y) / r.height * vb.h; applyVB(); }
+  } else if (pointers.size === 2 && pinch) {
+    dragMoved = true; p.x = e.clientX; p.y = e.clientY;
+    const [a, b] = [...pointers.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+    const [cx, cy] = toMap((a.x + b.x) / 2, (a.y + b.y) / 2);
+    zoomAt((pinch.w * pinch.d / d) / vb.w, cx, cy);
+    return;
+  }
+  p.x = e.clientX; p.y = e.clientY;
+});
+function endPointer(e) { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = null; if (!pointers.size) svg.classList.remove("panning"); }
+svg.addEventListener("pointerup", endPointer);
+svg.addEventListener("pointercancel", endPointer);
+document.getElementById("zin").onclick = () => zoomAt(1 / 1.5, vb.x + vb.w / 2, vb.y + vb.h / 2);
+document.getElementById("zout").onclick = () => zoomAt(1.5, vb.x + vb.w / 2, vb.y + vb.h / 2);
+document.getElementById("zfit").onclick = () => fitTo(bounds);
+
+/* ---------- selection & route display ---------- */
+const state = { from: null, to: null, route: null };
+const fromIn = document.getElementById("from"), toIn = document.getElementById("to");
+const resultEl = document.getElementById("result");
+const nameAt = e => { const g = e.target.closest("[data-name]"); return g ? g.getAttribute("data-name") : null; };
+svg.addEventListener("click", e => { if (!dragMoved) { const n = nameAt(e); if (n) pick(n); } });
+svg.addEventListener("keydown", e => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("station")) { e.preventDefault(); pick(e.target.dataset.name); }
+});
+svg.addEventListener("pointerover", e => {
+  const n = nameAt(e);
+  for (const st of stations.values()) st.label.classList.toggle("hover", st.name === n);
+});
+function pick(name) {
+  if (!state.from || state.to) { state.from = name; state.to = null; }
+  else if (name === state.from) state.from = null;
+  else state.to = name;
+  update(true);
+}
+function fromInput(input, key) {
+  const v = input.value.trim().toLowerCase();
+  const match = [...stations.keys()].find(n => n.toLowerCase() === v);
+  if (match) { state[key] = match; update(true); }
+  else if (!v) { state[key] = null; update(false); }
+}
+fromIn.addEventListener("change", () => fromInput(fromIn, "from"));
+toIn.addEventListener("change", () => fromInput(toIn, "to"));
+document.getElementById("swap").onclick = () => { [state.from, state.to] = [state.to, state.from]; update(true); };
+const dl = document.getElementById("station-list");
+[...stations.keys()].sort((a, b) => a.localeCompare(b, "de")).forEach(n => { const o = document.createElement("option"); o.value = n; dl.appendChild(o); });
+const badge = id => { const l = lineById[id]; return `<span class="lb" style="background:${l.color};color:${l.text}">${id}</span>`; };
+document.getElementById("legend").innerHTML = lines.map(l => badge(l.id)).join("");
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtMin = m => Math.round(m) + " min";
+
+function routeBounds() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  state.route.legs.flatMap(g => g.stops).forEach(n => { const s = stations.get(n); x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y); });
+  const w = Math.max(x1 - x0, 2500) * 1.35, h = Math.max(y1 - y0, 2000) * 1.35;
+  return { x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h / 2, w, h };
+}
+function drawMarkers(s) {
+  markerLayer.replaceChildren();
+  const cs = getComputedStyle(document.documentElement);
+  const mark = (name, color, letter) => {
+    if (!name) return;
+    const st = stations.get(name), g = el("g", { class: "marker" }, markerLayer);
+    el("circle", { cx: st.x, cy: st.y, r: 8.5 * s, fill: color }, g);
+    el("text", { x: st.x, y: st.y + 0.5 * s, "font-size": 10 * s }, g).textContent = letter;
+  };
+  mark(state.from, cs.getPropertyValue("--accent").trim(), "A");
+  mark(state.to, cs.getPropertyValue("--dest").trim(), "B");
+}
+
+function update(refit) {
+  fromIn.value = state.from || ""; toIn.value = state.to || "";
+  state.route = state.from && state.to ? findRoute(state.from, state.to) : null;
+  routeLayer.replaceChildren();
+  svg.classList.toggle("has-route", !!state.route);
+  const onRoute = new Set();
+  if (state.route) for (const g of state.route.legs) {
+    const l = lineById[g.line];
+    for (let i = 1; i < g.stops.length; i++) {
+      const s = l.segs.find(s => segKey(s.a, s.b) === segKey(g.stops[i - 1], g.stops[i]));
+      el("path", { class: "seg", d: pathD(s.pts), stroke: l.color }, routeLayer);
+    }
+    g.stops.forEach(n => onRoute.add(n));
+  }
+  for (const st of stations.values()) {
+    st.g.classList.toggle("on-route", onRoute.has(st.name));
+    st.label.classList.toggle("on-route", onRoute.has(st.name));
+  }
+  renderPanel();
+  if (refit && state.route) fitTo(routeBounds());
+  scheduleLayout();
+}
+
+function renderPanel() {
+  const r = state.route;
+  if (!r) {
+    resultEl.innerHTML = state.from
+      ? `<p class="empty">Start: <strong>${esc(state.from)}</strong>. Now click your destination on the map.</p>`
+      : `<p class="empty">No route yet. Click any station on the map to begin, or type a station name above.</p>`;
+    return;
+  }
+  let html = `<div class="summary"><div><div class="big">${fmtMin(r.total)}</div><div class="small">travel time</div></div>
+    <div class="small">${r.stops} stops<br>${r.transfers === 0 ? "no changes" : r.transfers === 1 ? "1 change" : r.transfers + " changes"}</div></div>
+    <ul class="legs">`;
+  r.legs.forEach((g, i) => {
+    const a = g.stops[0], b = g.stops[g.stops.length - 1];
+    if (i > 0) html += `<li class="transfer">Change at ${esc(a)} · about ${fmtMin(g.change)} incl. waiting</li>`;
+    const dirs = [g.line, ...g.alts].map(id => `${badge(id)} towards ${esc(towards(id, a, b))}`).join("<br>or ");
+    html += `<li class="leg"><div class="rail">${badge(g.line)}<span class="bar" style="background:${lineById[g.line].color}"></span></div>
+      <div class="body"><span class="st">${esc(a)}</span><span class="meta">${dirs}</span>
+      <span class="meta">${g.stops.length - 1} ${g.stops.length === 2 ? "stop" : "stops"} · ${fmtMin(g.minutes)}</span>
+      <span class="st">${esc(b)}</span></div></li>`;
+  });
+  html += `</ul><button class="clear" id="clear">Clear route</button>
+    <p class="note">Ride times come from the VBB weekday timetable. A change counts ${TRANSFER_WALK_MIN} min walking plus half the interval of the next line. Waiting for the first train is not included.</p>`;
+  resultEl.innerHTML = html;
+  document.getElementById("clear").onclick = () => { state.from = state.to = null; update(false); fitTo(bounds); };
+}
+
+new ResizeObserver(() => fitTo(state.route ? routeBounds() : bounds)).observe(svg);
+measureLabels();
+state.from = "Zoologischer Garten"; state.to = "Warschauer Straße";
+fitTo(bounds);
+update(true);
+document.fonts && document.fonts.ready.then(() => { measureLabels(); relayout(); });
+</script>
