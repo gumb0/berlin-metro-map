@@ -40,6 +40,19 @@ FEATURES = [
     ("Olympiapark Berlin", "park", {"leisure", "landuse"}),
     ("Volkspark Wilmersdorf", "park", {"leisure"}),
     ("Volkspark Mariendorf", "park", {"leisure"}),
+    # Outer area, along the S-Bahn
+    ("Großer Müggelsee", "lake", {"natural", "water"}),
+    ("Langer See, Berlin", "lake", {"natural", "water"}),
+    ("Zeuthener See", "lake", {"natural", "water"}),
+    ("Templiner See", "lake", {"natural", "water"}),
+    ("Tiefer See, Potsdam", "lake", {"natural", "water"}),
+    ("Jungfernsee", "lake", {"natural", "water"}),
+    ("Lehnitzsee", "lake", {"natural", "water"}),
+    ("Flughafensee", "lake", {"natural", "water"}),
+    ("Park Sanssouci", "park", {"leisure", "tourism", "boundary"}),
+    ("Spandauer Forst", "forest", {"landuse", "natural", "boundary"}),
+    ("Köpenicker Stadtforst", "forest", {"landuse", "natural", "boundary"}),
+    ("Dahme, Königs Wusterhausen", "river", {"waterway"}),
     # Features that search does not find reliably are fetched by OSM id.
     ("R390274", "river", "Spree"),
     ("R412171", "river", "Neuköllner Schiffahrtskanal"),
@@ -47,7 +60,7 @@ FEATURES = [
     ("W815670035", "park", "Schlosspark Charlottenburg"),
     ("W125194752", "park", "Botanischer Garten"),
 ]
-BBOX = (13.05, 52.33, 13.80, 52.70)   # lon/lat window kept in the output
+BBOX = (12.85, 52.22, 14.05, 52.82)   # lon/lat window kept in the output
 
 out = []
 for q, kind, cats in FEATURES:
@@ -58,13 +71,18 @@ for q, kind, cats in FEATURES:
     else:
         url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
             {"q": q, "format": "jsonv2", "polygon_geojson": 1, "polygon_threshold": 0.0002, "limit": 6,
-             "viewbox": "13.05,52.70,13.80,52.33", "bounded": 1})
+             "viewbox": "12.85,52.82,14.05,52.22", "bounded": 1})
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        res = json.load(urllib.request.urlopen(req, timeout=60))
-    except Exception as e:
-        print("FAILED", q, e)
-        time.sleep(1.2)
+    res = None
+    for attempt in range(3):          # Nominatim answers 429 when asked too fast; back off and retry
+        try:
+            res = json.load(urllib.request.urlopen(req, timeout=90))
+            break
+        except Exception as e:
+            print("retry", q, e)
+            time.sleep(10 * (attempt + 1))
+    if res is None:
+        print("FAILED", q)
         continue
     pick = None
     for r in res:
@@ -78,7 +96,7 @@ for q, kind, cats in FEATURES:
         print("ok  ", q, "->", pick["category"], pick["type"], pick["geojson"]["type"])
     else:
         print("none", q, [(r["category"], r["type"], r.get("geojson", {}).get("type")) for r in res])
-    time.sleep(1.2)
+    time.sleep(1.5)
 
 
 def rnd(c):

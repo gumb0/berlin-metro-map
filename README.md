@@ -1,25 +1,33 @@
-# Berlin U-Bahn map
+# Berlin metro map
 
-An interactive map of the Berlin U-Bahn with a simple route planner: click a start
-station, click a destination, and the map highlights the fastest route with the lines,
-changes and travel time.
+An interactive map of the Berlin U-Bahn and S-Bahn with a simple route planner: click a
+start station, click a destination, and the map highlights the fastest route with the
+lines, changes and travel time.
 
 The map is drawn on real geography. Stations and tracks are at their true positions,
 with the Spree, canals, lakes and large parks in the background. The centre is enlarged
-with a radial stretch so Mitte stays readable.
+with a radial stretch, so Mitte stays readable while the S-Bahn's outer ends (Oranienburg,
+Strausberg, Potsdam, BER) still fit on the screen.
 
 ## How it works
 
 | File | Purpose |
 | --- | --- |
 | `src/template.html` | The page: map drawing, label placement, routing, UI |
-| `data/ubahn.json` | Stations, lines, track shapes, travel times (generated) |
+| `data/network.json` | Stations, lines, track shapes, travel times, intervals (generated) |
 | `data/background.json` | Rivers, lakes, parks, city boundary (generated) |
 | `index.html` | Built page with the data inlined; open it directly in a browser |
 
 Routing runs Dijkstra on a graph where each node is a station on a specific line.
-Riding between stations costs the timetable time; changing lines costs 3 minutes
-walking plus half the interval of the line you change to.
+
+- Riding between two stations costs the timetable time.
+- Changing lines costs walking time (3 min within U-Bahn or S-Bahn, 5 min between them)
+  plus half the interval of the line you change to, at that station. Intervals are per
+  station because many S-Bahn lines run more often in the city than at their outer ends.
+- The Ring lines run one way only: S41 clockwise, S42 anticlockwise.
+- A few interchanges between stations with different names are linked by walking, for
+  example Spandau and Rathaus Spandau. They are listed in `WALK_LINKS` in
+  `scripts/build_data.py`.
 
 ## Rebuilding
 
@@ -31,16 +39,17 @@ curl -L -o gtfs.zip https://www.vbb.de/vbbgtfs
 unzip -o gtfs.zip -d gtfs
 python3 scripts/build_data.py gtfs
 
-# 2. Background shapes from OpenStreetMap (only needed rarely; about 40 requests to Nominatim)
+# 2. Background shapes from OpenStreetMap (only needed rarely; about 50 requests to Nominatim)
 python3 scripts/fetch_background.py
 
 # 3. Build the page
 python3 scripts/build_page.py
 ```
 
-`build_data.py` takes the line structure from the whole feed period, so temporary
-closures do not shorten a line. Travel times and headways come from the weekday on
-which each full line has the most trips (trips starting 07:00–20:00).
+`build_data.py` takes each line's stations from the longest pattern that runs regularly
+over the whole feed period, so temporary closures do not shorten a line. Travel times and
+intervals come from a typical Tuesday to Thursday (holidays and construction days are
+skipped), using trips that start between 07:00 and 20:00.
 
 ## Settings
 
@@ -48,14 +57,16 @@ At the top of the script in `src/template.html`:
 
 - `STRETCH_P`: 1 draws exact geography; lower values give the centre more room (default 0.72).
 - `STRETCH_R`: radius in metres inside which the map is enlarged (default 3500).
-- `TRANSFER_WALK_MIN`: walking time assumed for every change (default 3).
+- `WALK_SAME_MODE_MIN`, `WALK_U_S_MIN`: walking time assumed for a change (defaults 3 and 5).
 
 ## Known limitations
 
-- Walking time for a change is the same at every station. Per-station times could come
-  from `pathways.txt` in the GTFS feed.
+- Walking time for a change is a flat estimate. Per-station times could come from
+  `pathways.txt` in the GTFS feed.
 - Planned closures in the timetable are not shown.
-- U-Bahn only. The S-Bahn is the next step and fits the same data format.
+- Lines are taken from the timetable as published. S45 does not appear in the current
+  VBB feed, so it is not on the map.
+- Regional trains (RE, RB) are not included.
 
 ## Data sources
 

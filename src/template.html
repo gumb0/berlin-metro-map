@@ -1,4 +1,4 @@
-<title>Berlin U-Bahn Planner</title>
+<title>Berlin Metro Map</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -49,6 +49,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); ove
 }
 h1 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
 .ubadge { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; border-radius: 4px; background: #115d91; color: #fff; font-size: 0.8em; font-weight: 700; }
+.ubadge + .ubadge { margin-left: -6px; }
+.sbadge { background: #008d4f; border-radius: 50%; }
 .hint { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
 .fields { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
 .field { display: flex; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 6px; padding: 0 10px; background: var(--bg); }
@@ -67,6 +69,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent
 .legs { list-style: none; margin: 0; padding: 0; display: grid; }
 .leg { display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding: 10px 0; }
 .leg .rail { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.lb.S { border-radius: 999px; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 4px; }
 .lb { display: inline-grid; place-items: center; min-width: 34px; height: 22px; padding: 0 4px; border-radius: 3px; font-weight: 700; font-size: 0.85rem; }
 .leg .bar { width: 4px; flex: 1; border-radius: 2px; min-height: 18px; }
 .leg .body { min-width: 0; display: grid; gap: 3px; font-size: 0.92rem; }
@@ -80,7 +84,7 @@ svg#map { width: 100%; height: 100%; display: block; touch-action: none; cursor:
 svg#map.panning { cursor: grabbing; }
 .zoom { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 12px; display: grid; gap: 6px; }
 .zoom button { width: 38px; height: 38px; background: var(--surface); font-size: 1.15rem; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
-.legend { position: absolute; left: 12px; bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 24px); }
+.legend { position: absolute; left: 12px; bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: grid; gap: 4px; max-width: calc(100% - 24px); }
 .attrib { background: var(--bg); padding: 2px 6px; border-radius: 3px; position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); bottom: max(10px, env(safe-area-inset-bottom, 0px)); font-size: 0.7rem; color: var(--muted); }
 
 /* map */
@@ -91,7 +95,9 @@ svg#map.panning { cursor: grabbing; }
 .bg-boundary { fill: none; stroke: var(--boundary); stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; stroke-width: 1.5; }
 .geo-lbl { font-family: var(--font-label); font-style: italic; fill: var(--geo-label); text-anchor: middle; pointer-events: none; }
 .seg { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; stroke-width: 4; }
-.route .seg { stroke-width: 7; }
+.seg.S { stroke-width: 3.2; }
+.walk { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.route .seg, .route .seg.S { stroke-width: 7; }
 .base-lines, .station, .lbl { transition: opacity .2s; }
 svg.has-route .base-lines { opacity: .2; }
 svg.has-route .station:not(.on-route), svg.has-route .lbl:not(.on-route) { opacity: .3; }
@@ -122,7 +128,7 @@ svg.has-route .station:not(.on-route), svg.has-route .lbl:not(.on-route) { opaci
 <div class="app">
   <aside class="panel" aria-label="Route planner">
     <div>
-      <h1><span class="ubadge" aria-hidden="true">U</span>Berlin U-Bahn</h1>
+      <h1><span class="ubadge" aria-hidden="true">U</span><span class="ubadge sbadge" aria-hidden="true">S</span>Berlin U-Bahn &amp; S-Bahn</h1>
       <p class="hint">Click a station to set your start, then click your destination. Drag to move the map, scroll or pinch to zoom.</p>
     </div>
     <div class="fields">
@@ -136,7 +142,7 @@ svg.has-route .station:not(.on-route), svg.has-route .lbl:not(.on-route) { opaci
     <div id="result"></div>
   </aside>
   <div class="mapwrap">
-    <svg id="map" role="img" aria-label="Map of the Berlin U-Bahn drawn on real geography"></svg>
+    <svg id="map" role="img" aria-label="Map of the Berlin U-Bahn and S-Bahn drawn on real geography"></svg>
     <div class="zoom">
       <button id="zin" aria-label="Zoom in">+</button>
       <button id="zout" aria-label="Zoom out">−</button>
@@ -148,17 +154,18 @@ svg.has-route .station:not(.on-route), svg.has-route .lbl:not(.on-route) { opaci
 </div>
 
 <script>
-/* Data is inlined by scripts/build_page.py from data/ubahn.json and data/background.json. */
-const NETWORK = /*__UBAHN__*/null;
+/* Data is inlined by scripts/build_page.py from data/network.json and data/background.json. */
+const NETWORK = /*__NETWORK__*/null;
 const BACKGROUND = /*__BACKGROUND__*/null;
 
 /* ---------- settings ---------- */
-const TRANSFER_WALK_MIN = 3;       // walking between platforms when changing lines (flat estimate)
+const WALK_SAME_MODE_MIN = 3;      // walking between platforms when changing U->U or S->S (flat estimate)
+const WALK_U_S_MIN = 5;            // walking between U-Bahn and S-Bahn platforms (flat estimate)
 const CENTER = [52.5145, 13.395];  // map centre (Mitte); the radial stretch is measured from here
 const STRETCH_R = 3500;            // metres: inside this radius the map is enlarged, outside reduced
 const STRETCH_P = 0.72;            // 1 = true geography; lower = more room in the centre
 const LABEL_PX = 12;               // station label size on screen
-const LINE_GAP_PX = 4.5;           // spacing between lines that share track
+const LINE_GAP_PX = 4.2;           // spacing between lines that share track
 
 /* ---------- projection: metres from CENTER, then radial stretch ---------- */
 const KX = 111320 * Math.cos(CENTER[0] * Math.PI / 180), KY = 110540;
@@ -177,31 +184,69 @@ for (const s of NETWORK.stations) {
   stations.set(s.name, { name: s.name, x, y, lines: s.lines });
 }
 const lines = NETWORK.lines.map(l => ({
-  id: l.id, color: l.color, text: l.text, headway: l.headway, names: l.stations,
+  id: l.id, mode: l.mode, loop: l.loop, color: l.color, text: l.text, names: l.stations,
+  hw: Object.fromEntries(l.stations.map((n, i) => [n, l.headways[i]])),
   segs: l.segments.map((sg, i) => ({ a: l.stations[i], b: l.stations[i + 1], min: sg.min,
     pts: sg.shape.map(([la, lo]) => project(la, lo)) })),
 }));
 const lineById = Object.fromEntries(lines.map(l => [l.id, l]));
 const segKey = (a, b) => a < b ? a + "\u0000" + b : b + "\u0000" + a;
+const stepKey = (a, b) => a + "\u0000" + b;
 const segLines = new Map();
-lines.forEach(l => l.segs.forEach(s => {
-  const k = segKey(s.a, s.b);
-  if (!segLines.has(k)) segLines.set(k, []);
-  segLines.get(k).push(l.id);
-}));
-const transferMin = toLine => TRANSFER_WALK_MIN + lineById[toLine].headway / 2;
+lines.forEach(l => {
+  // Ring lines run one way only; every other line runs both ways.
+  l.steps = new Set();
+  l.segs.forEach(s => {
+    const k = segKey(s.a, s.b);
+    if (!segLines.has(k)) segLines.set(k, []);
+    segLines.get(k).push(l.id);
+    l.steps.add(stepKey(s.a, s.b));
+    if (!l.loop) l.steps.add(stepKey(s.b, s.a));
+  });
+  if (l.loop) {
+    // Clockwise on screen (y grows downwards) when the shoelace sum is positive.
+    let a2 = 0;
+    for (let i = 0; i < l.names.length - 1; i++) {
+      const p = stations.get(l.names[i]), q = stations.get(l.names[i + 1]);
+      a2 += p.x * q.y - q.x * p.y;
+    }
+    l.ringDir = a2 > 0 ? "clockwise" : "anticlockwise";
+  }
+});
+const walkMin = (la, lb) => lineById[la].mode === lineById[lb].mode ? WALK_SAME_MODE_MIN : WALK_U_S_MIN;
+const waitMin = (line, station) => lineById[line].hw[station] / 2;
 
-/* Routing graph: nodes are station|line; changing line costs walk + average wait. */
+/* Routing graph: nodes are station|line. Riding costs timetable minutes; changing
+   costs walking plus half the interval of the next line at that station. */
 const adj = new Map();
 const nk = (s, l) => s + "|" + l;
 function addEdge(u, v, w) { if (!adj.has(u)) adj.set(u, []); adj.get(u).push({ v, w }); }
 lines.forEach(l => l.segs.forEach(s => {
   addEdge(nk(s.a, l.id), nk(s.b, l.id), s.min);
-  addEdge(nk(s.b, l.id), nk(s.a, l.id), s.min);
+  if (!l.loop) addEdge(nk(s.b, l.id), nk(s.a, l.id), s.min);
 }));
 stations.forEach(st => {
-  for (const a of st.lines) for (const b of st.lines) if (a !== b) addEdge(nk(st.name, a), nk(st.name, b), transferMin(b) + 0.01);
+  for (const a of st.lines) for (const b of st.lines)
+    if (a !== b) addEdge(nk(st.name, a), nk(st.name, b), walkMin(a, b) + waitMin(b, st.name) + 0.01);
 });
+const walkLinks = new Map();   // "A\0B" -> minutes, both directions
+for (const w of NETWORK.walks) {
+  walkLinks.set(stepKey(w.a, w.b), w.min); walkLinks.set(stepKey(w.b, w.a), w.min);
+  for (const [a, b] of [[w.a, w.b], [w.b, w.a]])
+    for (const la of stations.get(a).lines) for (const lb of stations.get(b).lines)
+      addEdge(nk(a, la), nk(b, lb), w.min + waitMin(lb, b) + 0.01);
+}
+/* A station counts as an interchange (white circle) when U meets S, lines part ways, or a walk link starts there. */
+const walkStations = new Set(NETWORK.walks.flatMap(w => [w.a, w.b]));
+for (const st of stations.values()) {
+  const nb = new Set(st.lines.map(id => {
+    const n = lineById[id].names, out = new Set();
+    n.forEach((x, i) => { if (x === st.name) { if (n[i - 1]) out.add(n[i - 1]); if (n[i + 1]) out.add(n[i + 1]); } });
+    return [...out].sort().join("|");
+  }));
+  const modes = new Set(st.lines.map(id => lineById[id].mode));
+  st.ix = nb.size > 1 || modes.size > 1 || walkStations.has(st.name);
+}
 
 function findRoute(from, to) {
   if (from === to) return null;
@@ -235,16 +280,28 @@ function findRoute(from, to) {
     g.minutes = 0;
     for (let k = 1; k < g.stops.length; k++)
       g.minutes += line.segs.find(s => segKey(s.a, s.b) === segKey(g.stops[k - 1], g.stops[k])).min;
-    g.alts = lines.filter(o => o.id !== g.line && g.stops.every((s, k) => k === 0 ||
-      (segLines.get(segKey(g.stops[k - 1], s)) || []).includes(o.id))).map(o => o.id);
-    g.change = i > 0 ? transferMin(g.line) : 0;
+    // Other lines that make every step of this leg in the same direction.
+    g.alts = lines.filter(o => o.id !== g.line && g.stops.every((s, k) => k === 0 || o.steps.has(stepKey(g.stops[k - 1], s))))
+      .map(o => o.id);
+    g.change = 0;
+    if (i > 0) {
+      const prev = ride[i - 1], from = prev.stops[prev.stops.length - 1], at = g.stops[0];
+      if (from !== at) { g.walkFrom = from; g.change = walkLinks.get(stepKey(from, at)) + waitMin(g.line, at); }
+      else g.change = walkMin(prev.line, g.line) + waitMin(g.line, at);
+    }
   });
-  const total = ride.reduce((a, g) => a + g.minutes + g.change, 0);
-  return { legs: ride, total, transfers: ride.length - 1, stops: ride.reduce((a, g) => a + g.stops.length - 1, 0) };
+  // A walk link can also start or end the journey (e.g. Kaiserdamm -> Messe Nord/ZOB).
+  const walkStart = ride.length && ride[0].stops[0] !== from ? walkLinks.get(stepKey(from, ride[0].stops[0])) : 0;
+  const lastStop = ride.length ? ride[ride.length - 1].stops.at(-1) : from;
+  const walkEnd = lastStop !== to ? walkLinks.get(stepKey(lastStop, to)) : 0;
+  const total = walkStart + walkEnd + ride.reduce((a, g) => a + g.minutes + g.change, 0);
+  return { legs: ride, total, transfers: Math.max(0, ride.length - 1), walkStart, walkEnd, from, to,
+           stops: ride.reduce((a, g) => a + g.stops.length - 1, 0) };
 }
-function towards(lineId, a, b) {
-  const n = lineById[lineId].names;
-  return n.indexOf(b) > n.indexOf(a) ? n[n.length - 1] : n[0];
+function direction(lineId, a, b) {
+  const l = lineById[lineId], n = l.names;
+  if (l.loop) return "Ring, " + l.ringDir;
+  return "towards " + (n.indexOf(b) > n.indexOf(a) ? n[n.length - 1] : n[0]);
 }
 
 /* ---------- SVG helpers ---------- */
@@ -278,7 +335,7 @@ const ORDER = { forest: 0, park: 1, lake: 2, river: 3, boundary: 4 };
     const d = polys.map(p => p.map(ringD).join("")).join("");
     const cls = f.kind === "lake" ? "bg-water" : f.kind === "forest" ? "bg-forest" : f.kind === "boundary" ? "bg-boundary" : "bg-park";
     el("path", { class: cls, d, "fill-rule": "evenodd" }, bgLayer);
-    if (["Großer Tiergarten", "Tempelhofer Feld", "Grunewald", "Tegeler See", "Großer Wannsee", "Treptower Park", "Volkspark Jungfernheide"].includes(f.name)) {
+    if (["Großer Tiergarten", "Tempelhofer Feld", "Grunewald", "Tegeler See", "Großer Wannsee", "Treptower Park", "Volkspark Jungfernheide", "Großer Müggelsee", "Park Sanssouci", "Spandauer Forst", "Tegeler Forst"].includes(f.name)) {
       // Label at the centre of the largest ring's bounding box.
       const ring = polys.map(p => p[0]).sort((a, b) => b.length - a.length)[0].map(([lo, la]) => project(la, lo));
       const xs = ring.map(p => p[0]), ys = ring.map(p => p[1]);
@@ -292,10 +349,16 @@ const ORDER = { forest: 0, park: 1, lake: 2, river: 3, boundary: 4 };
 });
 const geoLabelEls = geoLabels.map(g => { const t = el("text", { class: "geo-lbl", x: g.x, y: g.y }, bgLayer); t.textContent = g.text; g.el = t; return t; });
 
+/* walking connections between stations with different names */
+const walkLayer = el("g", { class: "walks" }, baseLines);
+for (const w of NETWORK.walks) {
+  const a = stations.get(w.a), b = stations.get(w.b);
+  el("path", { class: "walk", d: pathD([[a.x, a.y], [b.x, b.y]]) }, walkLayer);
+}
 /* lines: one path per segment; shared segments are offset sideways at each zoom level */
 const segEls = [];
 for (const l of lines) for (const s of l.segs) {
-  const p = el("path", { class: "seg", d: pathD(s.pts), stroke: l.color }, baseLines);
+  const p = el("path", { class: "seg " + l.mode, d: pathD(s.pts), stroke: l.color }, baseLines);
   const ids = segLines.get(segKey(s.a, s.b));
   if (ids.length > 1) segEls.push({ el: p, s, line: l.id, ids: [...ids].sort() });
 }
@@ -309,15 +372,17 @@ function offsetPolyline(pts, off) {
 function updateSharedSegments(s) {
   for (const e of segEls) {
     const idx = e.ids.indexOf(e.line), off = (idx - (e.ids.length - 1) / 2) * LINE_GAP_PX * s;
-    // Use one direction for every line on the segment so offsets do not cancel out.
-    const pts = e.s.a < e.s.b ? e.s.pts : [...e.s.pts].reverse();
+    // Orient every shared piece along the travel direction of the bundle's first line, so the
+    // order of colours stays the same from one station to the next.
+    const ref = lineById[e.ids[0]];
+    const refSeg = ref.segs.find(r => segKey(r.a, r.b) === segKey(e.s.a, e.s.b));
+    const pts = refSeg.a === e.s.a ? e.s.pts : [...e.s.pts].reverse();
     e.el.setAttribute("d", pathD(offsetPolyline(pts, off)));
   }
 }
 
 /* stations */
 for (const st of stations.values()) {
-  st.ix = st.lines.length > 1;
   const g = el("g", { class: "station", "data-name": st.name, tabindex: 0, role: "button",
     "aria-label": st.name + " (" + st.lines.join(", ") + ")" }, stationLayer);
   st.dot = st.ix ? el("circle", { class: "st-x", cx: st.x, cy: st.y }, g)
@@ -466,6 +531,13 @@ const bounds = (() => {
   const mx = (x1 - x0) * 0.06, my = (y1 - y0) * 0.05;
   return { x: x0 - mx, y: y0 - my, w: x1 - x0 + 2 * mx, h: y1 - y0 + 2 * my };
 })();
+// Opening view: everything within about 14 km of the centre (inside the Ring plus the inner suburbs).
+const core = (() => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const lim = project(CENTER[0], CENTER[1] + 14000 / KX)[0];
+  stations.forEach(s => { if (Math.hypot(s.x, s.y) < lim) { x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y); } });
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+})();
 let vb = { ...bounds }, laidOut = 0;
 function applyVB() {
   svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
@@ -550,14 +622,15 @@ toIn.addEventListener("change", () => fromInput(toIn, "to"));
 document.getElementById("swap").onclick = () => { [state.from, state.to] = [state.to, state.from]; update(true); };
 const dl = document.getElementById("station-list");
 [...stations.keys()].sort((a, b) => a.localeCompare(b, "de")).forEach(n => { const o = document.createElement("option"); o.value = n; dl.appendChild(o); });
-const badge = id => { const l = lineById[id]; return `<span class="lb" style="background:${l.color};color:${l.text}">${id}</span>`; };
-document.getElementById("legend").innerHTML = lines.map(l => badge(l.id)).join("");
+const badge = id => { const l = lineById[id]; return `<span class="lb ${l.mode}" style="background:${l.color};color:${l.text}">${id}</span>`; };
+document.getElementById("legend").innerHTML = ["U", "S"].map(m =>
+  `<div class="legend-row">${lines.filter(l => l.mode === m).map(l => badge(l.id)).join("")}</div>`).join("");
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtMin = m => Math.round(m) + " min";
 
 function routeBounds() {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  state.route.legs.flatMap(g => g.stops).forEach(n => { const s = stations.get(n); x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y); });
+  [state.from, state.to, ...state.route.legs.flatMap(g => g.stops)].forEach(n => { const s = stations.get(n); x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y); });
   const w = Math.max(x1 - x0, 2500) * 1.35, h = Math.max(y1 - y0, 2000) * 1.35;
   return { x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h / 2, w, h };
 }
@@ -584,10 +657,11 @@ function update(refit) {
     const l = lineById[g.line];
     for (let i = 1; i < g.stops.length; i++) {
       const s = l.segs.find(s => segKey(s.a, s.b) === segKey(g.stops[i - 1], g.stops[i]));
-      el("path", { class: "seg", d: pathD(s.pts), stroke: l.color }, routeLayer);
+      el("path", { class: "seg " + l.mode, d: pathD(s.pts), stroke: l.color }, routeLayer);
     }
     g.stops.forEach(n => onRoute.add(n));
   }
+  if (state.route) { onRoute.add(state.from); onRoute.add(state.to); }
   for (const st of stations.values()) {
     st.g.classList.toggle("on-route", onRoute.has(st.name));
     st.label.classList.toggle("on-route", onRoute.has(st.name));
@@ -608,25 +682,29 @@ function renderPanel() {
   let html = `<div class="summary"><div><div class="big">${fmtMin(r.total)}</div><div class="small">travel time</div></div>
     <div class="small">${r.stops} stops<br>${r.transfers === 0 ? "no changes" : r.transfers === 1 ? "1 change" : r.transfers + " changes"}</div></div>
     <ul class="legs">`;
+  if (r.walkStart) html += `<li class="transfer">Walk from ${esc(r.from)} to ${esc(r.legs[0].stops[0])} · about ${fmtMin(r.walkStart)}</li>`;
   r.legs.forEach((g, i) => {
     const a = g.stops[0], b = g.stops[g.stops.length - 1];
-    if (i > 0) html += `<li class="transfer">Change at ${esc(a)} · about ${fmtMin(g.change)} incl. waiting</li>`;
-    const dirs = [g.line, ...g.alts].map(id => `${badge(id)} towards ${esc(towards(id, a, b))}`).join("<br>or ");
+    if (i > 0) html += g.walkFrom
+      ? `<li class="transfer">Walk from ${esc(g.walkFrom)} to ${esc(a)} · about ${fmtMin(g.change)} incl. waiting</li>`
+      : `<li class="transfer">Change at ${esc(a)} · about ${fmtMin(g.change)} incl. waiting</li>`;
+    const dirs = [g.line, ...g.alts].map(id => `${badge(id)} ${esc(direction(id, a, b))}`).join("<br>or ");
     html += `<li class="leg"><div class="rail">${badge(g.line)}<span class="bar" style="background:${lineById[g.line].color}"></span></div>
       <div class="body"><span class="st">${esc(a)}</span><span class="meta">${dirs}</span>
       <span class="meta">${g.stops.length - 1} ${g.stops.length === 2 ? "stop" : "stops"} · ${fmtMin(g.minutes)}</span>
       <span class="st">${esc(b)}</span></div></li>`;
   });
+  if (r.walkEnd) html += `<li class="transfer">Walk from ${esc(r.legs.length ? r.legs.at(-1).stops.at(-1) : r.from)} to ${esc(r.to)} · about ${fmtMin(r.walkEnd)}</li>`;
   html += `</ul><button class="clear" id="clear">Clear route</button>
-    <p class="note">Ride times come from the VBB weekday timetable. A change counts ${TRANSFER_WALK_MIN} min walking plus half the interval of the next line. Waiting for the first train is not included.</p>`;
+    <p class="note">Ride times come from the VBB weekday timetable. A change counts ${WALK_SAME_MODE_MIN} min walking (${WALK_U_S_MIN} min between U-Bahn and S-Bahn) plus half the interval of the next line at that station. Waiting for the first train is not included.</p>`;
   resultEl.innerHTML = html;
-  document.getElementById("clear").onclick = () => { state.from = state.to = null; update(false); fitTo(bounds); };
+  document.getElementById("clear").onclick = () => { state.from = state.to = null; update(false); fitTo(core); };
 }
 
-new ResizeObserver(() => fitTo(state.route ? routeBounds() : bounds)).observe(svg);
+new ResizeObserver(() => fitTo(state.route ? routeBounds() : core)).observe(svg);
 measureLabels();
-state.from = "Zoologischer Garten"; state.to = "Warschauer Straße";
-fitTo(bounds);
+state.from = "Kleistpark"; state.to = "Flughafen BER";
+fitTo(core);
 update(true);
 document.fonts && document.fonts.ready.then(() => { measureLabels(); relayout(); });
 </script>
